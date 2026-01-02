@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useLayoutEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Participant } from '../types';
 
@@ -31,34 +31,33 @@ interface TagCloudProps {
 // Sphere Radius
 const SPHERE_RADIUS = 9.0;
 
-// Colors
-const COLOR_NEON_BLUE = new THREE.Color('#22d3ee'); // Cyan-400
-const COLOR_NEON_AMBER = new THREE.Color('#fbbf24'); // Amber-400
+// Texture Resolution (Optimized High Definition)
+// 1024 was overkill and heavy on memory. 768px width is very sharp on 4K with DPR=2
+const TEX_WIDTH = 768;
+const TEX_HEIGHT = 1098;
 
-// --- Performance Optimization: Shared Geometries & Materials ---
+// --- Shared Geometries & Materials ---
 const sharedBoxGeometry = new THREE.BoxGeometry(1.4, 2.0, 0.05);
 const sharedPlaneGeometry = new THREE.PlaneGeometry(1.4, 2.0);
 
-// Materials - Holographic Glass Style
-// Base (Blueish)
+// Materials
 const baseBodyMaterial = new THREE.MeshStandardMaterial({
-  color: '#083344', // Cyan 950 base
-  emissive: '#06b6d4', // Cyan 500 glow
-  emissiveIntensity: 0.2, // Subtle self-illumination
+  color: '#0f172a', 
+  emissive: '#06b6d4', 
+  emissiveIntensity: 0.15,
   transparent: true,
-  opacity: 0.4, // Semi-transparent glass
-  roughness: 0.2,
+  opacity: 0.3,
+  roughness: 0.1,
   metalness: 0.8,
 });
 
-// Highlight (Amber/Gold)
 const highlightBodyMaterial = new THREE.MeshStandardMaterial({
-  color: '#451a03', // Amber 950 base
-  emissive: '#f59e0b', // Amber 500 glow
-  emissiveIntensity: 0.6, // Stronger glow for winner
+  color: '#451a03', 
+  emissive: '#f59e0b', 
+  emissiveIntensity: 1.5, 
   transparent: true,
-  opacity: 0.8,
-  roughness: 0.1,
+  opacity: 0.9, 
+  roughness: 0.2,
   metalness: 1.0,
 });
 
@@ -80,137 +79,122 @@ const getDeptCode = (dept?: string) => {
   return 'NBL'; 
 };
 
-// --- Texture Generation (Sci-Fi Hologram Style) ---
-const createCardTexture = (participant: Participant, isHighlighted: boolean) => {
+// --- Texture Generation ---
+const createCardTexture = (participant: Participant, isHighlighted: boolean, renderer: THREE.WebGLRenderer) => {
   const canvas = document.createElement('canvas');
-  const width = 256; 
-  const height = 366; 
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = TEX_WIDTH;
+  canvas.height = TEX_HEIGHT;
   const ctx = canvas.getContext('2d');
 
   if (!ctx) return null;
 
-  ctx.clearRect(0, 0, width, height);
-  const virtualWidth = 512;
-  const virtualHeight = 732;
-  
-  const scale = width / virtualWidth; 
-  ctx.scale(scale, scale);
+  // Clear
+  ctx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
 
-  const primaryColor = isHighlighted ? '#fbbf24' : '#22d3ee'; 
-  const secondaryColor = isHighlighted ? '#fffbeb' : '#cffafe';
-  
-  // 1. Background Gradient (Glass Effect)
-  // Create a gradient that is lighter at top-left and darker at bottom-right
-  const gradient = ctx.createLinearGradient(0, 0, virtualWidth, virtualHeight);
-  if (isHighlighted) {
-      gradient.addColorStop(0, 'rgba(245, 158, 11, 0.3)'); // Amber transparent
-      gradient.addColorStop(1, 'rgba(120, 53, 15, 0.1)');
-  } else {
-      gradient.addColorStop(0, 'rgba(6, 182, 212, 0.25)'); // Cyan transparent
-      gradient.addColorStop(1, 'rgba(8, 51, 68, 0.1)'); // Darker at bottom
-  }
+  // Theme Config
+  const theme = isHighlighted ? {
+      bgGradientStart: 'rgba(255, 85, 0, 0.9)', 
+      bgGradientEnd: 'rgba(200, 40, 0, 0.95)',
+      border: '#ffffff',
+      textPrimary: '#ffffff',
+      textSecondary: 'rgba(255, 255, 255, 0.9)',
+      glowColor: '#ffaa00',
+      textShadowBlur: 30
+  } : {
+      bgGradientStart: 'rgba(6, 182, 212, 0.2)',
+      bgGradientEnd: 'rgba(8, 51, 68, 0.4)', 
+      border: 'rgba(34, 211, 238, 0.5)', 
+      textPrimary: '#ccfbf1',
+      textSecondary: 'rgba(34, 211, 238, 0.8)',
+      glowColor: '#22d3ee',
+      textShadowBlur: 0
+  };
 
-  // Draw background shape with cut corners
+  // 1. Background (Cut Corners Shape)
+  const gradient = ctx.createLinearGradient(0, 0, 0, TEX_HEIGHT);
+  gradient.addColorStop(0, theme.bgGradientStart);
+  gradient.addColorStop(1, theme.bgGradientEnd);
+  
   ctx.fillStyle = gradient;
-  const cornerSize = 40;
+  
+  // Adjusted corner size for new resolution
+  const corner = 90; 
   ctx.beginPath();
-  ctx.moveTo(0, cornerSize);
-  ctx.lineTo(cornerSize, 0);
-  ctx.lineTo(virtualWidth - cornerSize, 0);
-  ctx.lineTo(virtualWidth, cornerSize);
-  ctx.lineTo(virtualWidth, virtualHeight - cornerSize);
-  ctx.lineTo(virtualWidth - cornerSize, virtualHeight);
-  ctx.lineTo(cornerSize, virtualHeight);
-  ctx.lineTo(0, virtualHeight - cornerSize);
+  ctx.moveTo(0, corner);
+  ctx.lineTo(corner, 0);
+  ctx.lineTo(TEX_WIDTH - corner, 0);
+  ctx.lineTo(TEX_WIDTH, corner);
+  ctx.lineTo(TEX_WIDTH, TEX_HEIGHT - corner);
+  ctx.lineTo(TEX_WIDTH - corner, TEX_HEIGHT);
+  ctx.lineTo(corner, TEX_HEIGHT);
+  ctx.lineTo(0, TEX_HEIGHT - corner);
   ctx.closePath();
   ctx.fill();
 
-  // 2. Inner Frame / Stroke (To make it pop against black bg)
+  // 2. Border
+  ctx.lineWidth = 10; 
+  ctx.strokeStyle = theme.border;
+  ctx.stroke();
+
+  // 3. Tech Lines
   ctx.lineWidth = 4;
-  ctx.strokeStyle = isHighlighted ? 'rgba(251, 191, 36, 0.5)' : 'rgba(34, 211, 238, 0.3)';
-  ctx.stroke();
-
-  // 3. Tech Grid Overlay
-  ctx.strokeStyle = isHighlighted ? 'rgba(251, 191, 36, 0.1)' : 'rgba(34, 211, 238, 0.08)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = isHighlighted ? 'rgba(255,255,255,0.5)' : 'rgba(34,211,238,0.3)';
   ctx.beginPath();
-  // Draw a simple grid
-  for(let x=0; x<=virtualWidth; x+=80) {
-      ctx.moveTo(x, 0); ctx.lineTo(x, virtualHeight);
-  }
-  for(let y=0; y<=virtualHeight; y+=80) {
-      ctx.moveTo(0, y); ctx.lineTo(virtualWidth, y);
-  }
+  ctx.moveTo(corner + 30, 80); ctx.lineTo(TEX_WIDTH - corner - 30, 80);
+  ctx.moveTo(corner + 30, TEX_HEIGHT - 80); ctx.lineTo(TEX_WIDTH - corner - 30, TEX_HEIGHT - 80);
   ctx.stroke();
 
-  // 4. HUD Elements
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = primaryColor;
-  ctx.lineCap = 'butt'; 
-
-  // Top Left Bracket
-  ctx.beginPath();
-  ctx.moveTo(0, 120); ctx.lineTo(0, cornerSize); ctx.lineTo(cornerSize, 0); ctx.lineTo(160, 0);
-  ctx.stroke();
-
-  // Bottom Right Bracket
-  ctx.beginPath();
-  ctx.moveTo(virtualWidth, virtualHeight - 120); ctx.lineTo(virtualWidth, virtualHeight - cornerSize); ctx.lineTo(virtualWidth - cornerSize, virtualHeight); ctx.lineTo(virtualWidth - 160, virtualHeight);
-  ctx.stroke();
-
-  // 5. Content
+  // 4. Text Content
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Decorative header bits
-  ctx.fillStyle = secondaryColor;
-  ctx.fillRect(30, 40, 20, 20);
-  ctx.fillRect(55, 40, 6, 20);
-  ctx.fillRect(65, 40, 6, 20);
-  
-  ctx.font = '600 32px "Orbitron"';
-  ctx.fillStyle = secondaryColor;
-  ctx.textAlign = 'right';
-  ctx.fillText('ID: ' + formatId(participant.id), virtualWidth - 30, 50);
-  
-  ctx.textAlign = 'center';
+  // "MoShang"
+  ctx.font = '600 64px "Orbitron"'; 
+  ctx.fillStyle = theme.textSecondary;
+  ctx.fillText('MoShang', TEX_WIDTH / 2, 160); 
 
   // Name
-  // Add a subtle text shadow/glow
-  ctx.shadowColor = primaryColor;
-  ctx.shadowBlur = 10;
-  ctx.font = '900 100px "Microsoft YaHei", "PingFang SC", sans-serif';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(participant.name, virtualWidth / 2, virtualHeight / 2 - 20);
-  ctx.shadowBlur = 0;
-
-  // Department Box Background
-  const deptY = virtualHeight - 100;
-  // Gradient for dept box
-  const deptGrad = ctx.createLinearGradient(80, 0, virtualWidth-80, 0);
-  deptGrad.addColorStop(0, 'rgba(0,0,0,0)');
-  deptGrad.addColorStop(0.2, isHighlighted ? 'rgba(245, 158, 11, 0.3)' : 'rgba(6, 182, 212, 0.2)');
-  deptGrad.addColorStop(0.8, isHighlighted ? 'rgba(245, 158, 11, 0.3)' : 'rgba(6, 182, 212, 0.2)');
-  deptGrad.addColorStop(1, 'rgba(0,0,0,0)');
-
-  ctx.fillStyle = deptGrad;
-  ctx.fillRect(80, deptY - 30, virtualWidth - 160, 60);
+  ctx.font = '900 190px "Microsoft YaHei", "PingFang SC", sans-serif'; 
+  ctx.fillStyle = theme.textPrimary;
   
-  // Department Text
-  ctx.font = '700 40px "Orbitron", sans-serif';
-  ctx.fillStyle = secondaryColor;
-  ctx.fillText(getDeptCode(participant.department) + " DIVISION", virtualWidth / 2, deptY);
+  if (isHighlighted) {
+    ctx.shadowColor = theme.glowColor;
+    ctx.shadowBlur = theme.textShadowBlur;
+  }
+  ctx.fillText(participant.name, TEX_WIDTH / 2, TEX_HEIGHT / 2 - 60);
+  ctx.shadowBlur = 0; 
+
+  // ID
+  ctx.font = '500 72px "Orbitron"'; 
+  ctx.fillStyle = theme.textSecondary;
+  ctx.letterSpacing = "6px";
+  ctx.fillText(formatId(participant.id), TEX_WIDTH / 2, TEX_HEIGHT / 2 + 100);
+
+  // Department
+  const deptCode = getDeptCode(participant.department);
+  ctx.font = '700 130px "Orbitron"'; 
+  ctx.fillStyle = theme.textPrimary;
+  if (isHighlighted) {
+      const textGrad = ctx.createLinearGradient(0, TEX_HEIGHT - 240, 0, TEX_HEIGHT - 120);
+      textGrad.addColorStop(0, '#ffffff');
+      textGrad.addColorStop(1, '#fbbf24');
+      ctx.fillStyle = textGrad;
+  }
+  ctx.fillText(deptCode, TEX_WIDTH / 2, TEX_HEIGHT - 180);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 2;
+  // Performance: Limit anisotropy to 4. 16 is overkill and slow.
+  texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4);
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+
   return texture;
 };
 
-// --- Math & Geometry ---
-
+// --- Geometry Helper ---
 const getFibonacciSpherePoints = (samples: number, radius: number) => {
   const points = [];
   if (samples <= 0) return points;
@@ -227,6 +211,119 @@ const getFibonacciSpherePoints = (samples: number, radius: number) => {
 };
 
 // --- Components ---
+
+const BackgroundInstances: React.FC<{ 
+    points: THREE.Vector3[], 
+    participants: Participant[], 
+    highlightedIds: string[] 
+}> = React.memo(({ points, participants, highlightedIds }) => {
+    
+    // We render two InstancedMeshes: one for normal, one for highlighted
+    // This is more performant than updating materials per instance or using complex shaders
+    const normalRef = useRef<THREE.InstancedMesh>(null);
+    const highlightRef = useRef<THREE.InstancedMesh>(null);
+    
+    // Calculate matrices once
+    const matrices = useMemo(() => {
+        const dummy = new THREE.Object3D();
+        return points.map(pos => {
+            dummy.position.copy(pos);
+            // Replicate the lookAt logic from TagCloudItem
+            // Look at center, then rotate 180 deg to face outwards correctly
+            dummy.lookAt(0, 0, 0);
+            dummy.rotateY(Math.PI);
+            dummy.updateMatrix();
+            return dummy.matrix.clone();
+        });
+    }, [points]);
+
+    // Update instances layout
+    useEffect(() => {
+        if (!normalRef.current || !highlightRef.current) return;
+
+        let normalIdx = 0;
+        let highlightIdx = 0;
+
+        participants.forEach((p, i) => {
+            const isHighlighted = highlightedIds.includes(p.id);
+            const matrix = matrices[i];
+
+            if (isHighlighted) {
+                highlightRef.current!.setMatrixAt(highlightIdx++, matrix);
+            } else {
+                normalRef.current!.setMatrixAt(normalIdx++, matrix);
+            }
+        });
+
+        normalRef.current.count = normalIdx;
+        highlightRef.current.count = highlightIdx;
+        
+        normalRef.current.instanceMatrix.needsUpdate = true;
+        highlightRef.current.instanceMatrix.needsUpdate = true;
+
+    }, [participants, highlightedIds, matrices]);
+
+    return (
+        <group>
+            <instancedMesh ref={normalRef} args={[sharedBoxGeometry, baseBodyMaterial, participants.length]} />
+            <instancedMesh ref={highlightRef} args={[sharedBoxGeometry, highlightBodyMaterial, participants.length]} />
+        </group>
+    );
+});
+
+// Optimized TagCloudItem: Only handles the Text Plane (unique texture)
+// The background box is now handled by BackgroundInstances
+const TagCloudTextPlane: React.FC<{ participant: Participant; position: THREE.Vector3; isHighlighted: boolean }> = React.memo(({ participant, position, isHighlighted }) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { gl } = useThree();
+  
+  const texture = useMemo(() => {
+    return createCardTexture(participant, isHighlighted, gl);
+  }, [participant, isHighlighted, gl]);
+
+  // Update position/rotation to match the instanced background
+  useEffect(() => {
+    if (meshRef.current) {
+      if (Math.abs(position.x) < 0.1 && Math.abs(position.z) < 0.1) {
+        meshRef.current.up.set(0, 0, 1);
+      } else {
+        meshRef.current.up.set(0, 1, 0);
+      }
+      meshRef.current.lookAt(0, 0, 0); 
+      meshRef.current.rotateY(Math.PI); 
+    }
+  }, [position]);
+
+  useEffect(() => {
+    return () => {
+        texture?.dispose();
+    };
+  }, [texture]);
+
+  if (!texture) return null;
+
+  return (
+    <mesh 
+        ref={meshRef} 
+        position={position} 
+        geometry={sharedPlaneGeometry}
+        // Offset slightly to be in front of the box (0.05 thick / 2 = 0.025)
+        // Box front is at +0.025 local Z. We put plane at +0.06 to be safe.
+    >
+      <meshBasicMaterial 
+        map={texture} 
+        transparent={true} 
+        side={THREE.DoubleSide}
+        depthTest={true} 
+        blending={THREE.NormalBlending} 
+        toneMapped={false} 
+      />
+    </mesh>
+  );
+}, (prev, next) => {
+    return prev.isHighlighted === next.isHighlighted && prev.participant.id === next.participant.id;
+});
+
 
 const Connections: React.FC<{ points: THREE.Vector3[] }> = React.memo(({ points }) => {
   const lines = useMemo(() => {
@@ -287,7 +384,8 @@ const TechRings = React.memo(() => {
 });
 
 const FloatingParticles = React.memo(() => {
-  const count = 100;
+  // Reduced particle count for performance
+  const count = 50;
   const mesh = useRef<THREE.InstancedMesh>(null);
   
   const particles = useMemo(() => {
@@ -329,54 +427,6 @@ const FloatingParticles = React.memo(() => {
   );
 });
 
-const TagCloudItem: React.FC<{ participant: Participant; position: THREE.Vector3; isHighlighted: boolean }> = React.memo(({ participant, position, isHighlighted }) => {
-  const groupRef = useRef<THREE.Group>(null);
-  
-  const texture = useMemo(() => {
-    return createCardTexture(participant, isHighlighted);
-  }, [participant, isHighlighted]);
-
-  useLayoutEffect(() => {
-    if (groupRef.current) {
-      if (Math.abs(position.x) < 0.1 && Math.abs(position.z) < 0.1) {
-        groupRef.current.up.set(0, 0, 1);
-      } else {
-        groupRef.current.up.set(0, 1, 0);
-      }
-      groupRef.current.lookAt(0, 0, 0); 
-      groupRef.current.rotateY(Math.PI); 
-      
-      return () => {
-        texture?.dispose();
-      };
-    }
-  }, [position, texture]);
-
-  return (
-    <group ref={groupRef} position={position}>
-      {/* Back Plate */}
-      <mesh 
-        geometry={sharedBoxGeometry} 
-        material={isHighlighted ? highlightBodyMaterial : baseBodyMaterial} 
-      />
-
-      {/* Text Plane */}
-      {texture && (
-        <mesh position={[0, 0, 0.06]} geometry={sharedPlaneGeometry}>
-          <meshBasicMaterial 
-            map={texture} 
-            transparent={true} 
-            side={THREE.DoubleSide}
-            depthTest={false} 
-            blending={THREE.AdditiveBlending} // Make texture self-illuminated
-          />
-        </mesh>
-      )}
-    </group>
-  );
-}, (prev, next) => {
-    return prev.isHighlighted === next.isHighlighted && prev.participant.id === next.participant.id;
-});
 
 export const TagCloud: React.FC<TagCloudProps> = ({ participants, isRunning, highlightedIds }) => {
   const groupRef = useRef<THREE.Group>(null);
@@ -408,10 +458,19 @@ export const TagCloud: React.FC<TagCloudProps> = ({ participants, isRunning, hig
     <group>
       <group ref={groupRef}>
         <Connections points={points} />
+        
+        {/* Render consolidated backgrounds via InstancedMesh (Fast!) */}
+        <BackgroundInstances 
+            points={points} 
+            participants={participants} 
+            highlightedIds={highlightedIds} 
+        />
+
+        {/* Render text planes individually (Texture heavy but necessary for unique names) */}
         {participants.map((p, i) => {
           const position = points[i] || new THREE.Vector3(0, 0, 0);
           return (
-            <TagCloudItem 
+            <TagCloudTextPlane 
               key={p.id}
               participant={p}
               position={position}
