@@ -125,170 +125,147 @@ const App: React.FC = () => {
     }
   }, [prizes, selectedPrizeId]);
 
-  // --- Logic ---
-
-  const handleStart = useCallback(() => {
-    if (eligibleParticipants.length === 0) {
-      alert("没有符合条件的参与者了！");
-      return;
+  // Audio Control Effect
+  useEffect(() => {
+    if (appState === 'RUNNING') {
+      bgMusicRef.current.play().catch(e => console.log("Audio play blocked", e));
+      bgMusicRef.current.volume = 0.6;
+    } else {
+      bgMusicRef.current.volume = 0.2;
+      // Don't pause, keep ambience
     }
-    setAppState('RUNNING');
-    bgMusicRef.current.play().catch(e => console.log("Audio play failed (interaction required)", e));
-  }, [eligibleParticipants.length]);
+  }, [appState]);
 
-  const handleStop = useCallback(() => {
-    const currentPrize = prizes.find(p => p.id === selectedPrizeId);
-    if (!currentPrize) return;
+  // Logic: Pick Winners
+  const handleDraw = useCallback(() => {
+    const prize = prizes.find(p => p.id === selectedPrizeId);
+    if (!prize) return;
 
-    // Determine how many to pick
-    const winnersForThisPrize = winners.filter(w => w.prizeId === selectedPrizeId);
-    const spotsLeft = Math.max(0, currentPrize.count - winnersForThisPrize.length);
-    
-    // Draw all remaining spots. 
-    const batchSize = spotsLeft; 
-
-    if (batchSize === 0) {
+    // How many to draw?
+    const drawCount = Math.min(prize.count, eligibleParticipants.length);
+    if (drawCount === 0) {
+      alert("该奖项已无可抽人员！");
       setAppState('IDLE');
-      bgMusicRef.current.pause();
-      alert("该奖项名额已满！");
       return;
     }
 
-    // Random Selection
+    // Shuffle and pick
     const shuffled = [...eligibleParticipants].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, batchSize);
-
-    const newWinners: Winner[] = selected.map(p => ({
+    const newWinners = shuffled.slice(0, drawCount).map(p => ({
       participant: p,
-      prizeId: selectedPrizeId,
+      prizeId: prize.id,
       timestamp: Date.now()
     }));
 
+    // Update global winners and current batch
     setWinners(prev => [...prev, ...newWinners]);
     setCurrentBatchWinners(newWinners);
+
+    // Transition state
     setAppState('SHOWING_WINNERS');
-    
-    // Effects
-    bgMusicRef.current.pause();
-    bgMusicRef.current.currentTime = 0;
-    // Note: Win sound will now be handled by the overlay one-by-one
-    
-    // Initial Confetti
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: [currentPrize.color, '#ffffff']
-    });
+  }, [eligibleParticipants, prizes, selectedPrizeId]);
 
-  }, [eligibleParticipants, prizes, selectedPrizeId, winners]);
-
-  const toggleRun = useCallback(() => {
-    if (appState === 'IDLE') {
-      handleStart();
-    } else if (appState === 'RUNNING') {
-      handleStop();
-    }
-  }, [appState, handleStart, handleStop]);
-
-  const handleCloseOverlay = () => {
-    setAppState('IDLE');
-    setCurrentBatchWinners([]);
-  };
-
-  // Keyboard Shortcuts
+  // Handle Spacebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isSettingsOpen) {
-        e.preventDefault(); // Prevent scrolling
-        // If showing winners, close overlay. Else toggle run.
-        if (appState === 'SHOWING_WINNERS') {
-           // Only close if all revealed? Or force close? 
-           // Let's keep it simple: space closes overlay if open
-           handleCloseOverlay();
-        } else {
-           toggleRun();
+      if (e.code === 'Space') {
+        e.preventDefault();
+        
+        // If settings open, ignore
+        if (isSettingsOpen) return;
+
+        if (appState === 'IDLE') {
+          setAppState('RUNNING');
+        } else if (appState === 'RUNNING') {
+          handleDraw();
+        } else if (appState === 'SHOWING_WINNERS') {
+          setAppState('IDLE');
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [appState, toggleRun, isSettingsOpen]);
+  }, [appState, handleDraw, isSettingsOpen]);
+
+
+  const toggleRun = () => {
+    if (appState === 'IDLE') {
+      setAppState('RUNNING');
+    } else if (appState === 'RUNNING') {
+      handleDraw();
+    }
+  };
+
+  const closeWinnersOverlay = () => {
+    setAppState('IDLE');
+  };
+
+  const resetWinners = () => {
+    setWinners([]);
+    setCurrentBatchWinners([]);
+  };
 
   return (
-    <div className="relative w-full h-screen bg-[#020617] overflow-hidden">
+    <div className="w-full h-screen bg-black overflow-hidden relative select-none">
       
+      {/* Title Bar */}
+      <div className="absolute top-0 left-0 right-0 z-10 flex flex-col items-center pt-8 pointer-events-none">
+         <h1 className="text-3xl md:text-5xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-200 via-teal-400 to-emerald-200 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)] tracking-wider">
+           {title}
+         </h1>
+         <div className="h-px w-64 bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent mt-4"></div>
+      </div>
+
       {/* 3D Scene */}
-      <div className="absolute inset-0 z-0">
-        <Canvas 
-          camera={{ position: [0, 0, 28], fov: 50 }} 
-          dpr={[1, 1.25]}
-          gl={{ antialias: false, toneMappingExposure: 1.1 }}
-        >
-          {/* Environment - Deep Blue/Slate Theme */}
-          <color attach="background" args={['#020617']} />
-          <fog attach="fog" args={['#020617', 20, 60]} />
+      <Canvas
+        dpr={[1, 2]} // CRITICAL: Enable High DPR for sharp text on Retina screens
+        gl={{ 
+          antialias: true, // CRITICAL: Enable AA
+          toneMapping: THREE.ACESFilmicToneMapping,
+          outputColorSpace: THREE.SRGBColorSpace
+        }}
+        camera={{ position: [0, 0, 22], fov: 50 }}
+      >
+        <color attach="background" args={['#050b14']} />
+        <fog attach="fog" args={['#050b14', 20, 50]} />
+
+        <Suspense fallback={<Loader />}>
+          <OrbitControls 
+            autoRotate={appState === 'RUNNING'}
+            autoRotateSpeed={appState === 'RUNNING' ? 5 : 0.5}
+            enablePan={false}
+            enableZoom={true}
+            minDistance={10}
+            maxDistance={40}
+          />
           
-          <Suspense fallback={<Loader />}>
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} intensity={2} color="#38bdf8" />
-            <pointLight position={[-10, -10, -10]} intensity={2} color="#e879f9" />
-            
-            <BackgroundDecoration />
-            
-            {/* Reduced stars as we have other elements now */}
-            <Stars radius={120} depth={50} count={1000} factor={4} saturation={0} fade speed={0.5} />
-            
-            <TagCloud 
-              participants={eligibleParticipants.concat(winners.map(w => w.participant))} 
-              isRunning={appState === 'RUNNING'} 
-              highlightedIds={[]} 
+          <ambientLight intensity={0.5} />
+          <pointLight position={[10, 10, 10]} intensity={1} color="#22d3ee" />
+          <pointLight position={[-10, -10, -10]} intensity={0.5} color="#fbbf24" />
+          
+          {/* Reduced star count for performance */}
+          <Stars radius={100} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
+          
+          <BackgroundDecoration />
+
+          <TagCloud 
+            participants={eligibleParticipants} 
+            isRunning={appState === 'RUNNING'}
+            highlightedIds={[]}
+          />
+
+          <EffectComposer enableNormalPass={false}>
+            <Bloom 
+              luminanceThreshold={0.4} // Lower threshold so texts glow
+              mipmapBlur 
+              intensity={1.2} 
+              radius={0.6}
             />
-            
-            <OrbitControls 
-              enableZoom={false} 
-              autoRotate={false} 
-              enableDamping={true}
-              dampingFactor={0.05}
-              rotateSpeed={0.5}
-            />
+          </EffectComposer>
+        </Suspense>
+      </Canvas>
 
-            <EffectComposer enableNormalPass={false} multisampling={0}>
-              <Bloom 
-                luminanceThreshold={0.2} 
-                mipmapBlur 
-                intensity={1.0} 
-                radius={0.4}
-              />
-            </EffectComposer>
-          </Suspense>
-        </Canvas>
-      </div>
-
-      {/* Vignette Overlay */}
-      <div className="absolute inset-0 z-10 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.8)_100%)]"></div>
-      
-      {/* Subtle Blue/Purple Top Gradient for depth */}
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-blue-950/30 to-transparent z-10 pointer-events-none"></div>
-
-      {/* Scanlines Effect (CSS) */}
-      <div className="absolute inset-0 z-10 pointer-events-none opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
-
-      {/* Header Info */}
-      <div className="absolute top-0 left-0 right-0 p-8 z-20 flex justify-between items-start pointer-events-none">
-        <div>
-           {/* Custom Title Display */}
-           <h1 className="text-4xl md:text-5xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)] tracking-widest uppercase">
-             {title}
-           </h1>
-           <div className="mt-2 flex gap-6 text-sm text-cyan-500/80 font-mono tracking-wider">
-              <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span> 总人数: {participants.length}</span>
-              <span>待抽奖: {eligibleParticipants.length}</span>
-              <span>已中奖: {winners.length}</span>
-           </div>
-        </div>
-      </div>
-
+      {/* UI Controls */}
       <Controls 
         appState={appState}
         prizes={prizes}
@@ -299,12 +276,22 @@ const App: React.FC = () => {
         participantCount={eligibleParticipants.length}
       />
 
+      {/* Winners Reveal Overlay */}
+      <WinnersOverlay 
+        winners={currentBatchWinners}
+        prize={prizes.find(p => p.id === selectedPrizeId) || prizes[0]}
+        isVisible={appState === 'SHOWING_WINNERS'}
+        onClose={closeWinnersOverlay}
+        revealDelay={revealDelay}
+      />
+
+      {/* Settings Modal */}
       <SettingsModal 
-        isOpen={isSettingsOpen} 
+        isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         participants={participants}
         setParticipants={setParticipants}
-        resetWinners={() => setWinners([])}
+        resetWinners={resetWinners}
         prizes={prizes}
         setPrizes={setPrizes}
         winners={winners}
@@ -312,14 +299,6 @@ const App: React.FC = () => {
         setTitle={setTitle}
         revealDelay={revealDelay}
         setRevealDelay={setRevealDelay}
-      />
-
-      <WinnersOverlay 
-        isVisible={appState === 'SHOWING_WINNERS'} 
-        winners={currentBatchWinners}
-        prize={prizes.find(p => p.id === selectedPrizeId)!}
-        onClose={handleCloseOverlay}
-        revealDelay={revealDelay}
       />
     </div>
   );
