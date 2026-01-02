@@ -6,15 +6,14 @@
 
 | **沉浸式 3D 主界面** | **电影级中奖揭晓** |
 |:---:|:---:|
-| ![Main View](https://via.placeholder.com/800x450/0f172a/38bdf8?text=3D+Main+View) | ![Winners Reveal](https://via.placeholder.com/800x450/0f172a/fbbf24?text=Winners+Reveal) |
+| <img width="1245" height="925" alt="image" src="https://github.com/user-attachments/assets/68cd8930-013a-453c-a972-043dccc11050" /> | <img width="929" height="951" alt="image" src="https://github.com/user-attachments/assets/6550d2e7-f009-405e-9a02-dc769fa465a9" />
+| 
 | *全息 3D 名字球体与动态星环* | *支持多卡片布局与辉光特效* |
 
-| **后台设置面板** | **实时控制栏** |
+| **后台设置面板** | **奖项设置栏** |
 |:---:|:---:|
-| ![Settings](https://via.placeholder.com/800x450/111827/10b981?text=Settings+Panel) | ![Controls](https://via.placeholder.com/800x450/111827/a3e635?text=Control+Bar) |
-| *支持 Excel 导入与多维度配置* | *快捷切换奖项与状态控制* |
+| <img width="972" height="802" alt="image" src="https://github.com/user-attachments/assets/afaed8ce-d1c1-4c6b-a641-6397d4e32754" /> | <img width="987" height="729" alt="image" src="https://github.com/user-attachments/assets/3a409864-2aa8-4d15-8df3-1356d37fc41d" />
 
-> *提示：项目运行后，您可以截图并替换上述图片链接（建议存放于 `public/screenshots/` 目录）。*
 
 ## ✨ 核心特性
 
