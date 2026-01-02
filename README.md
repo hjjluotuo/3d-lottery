@@ -3,7 +3,7 @@
 一个基于 **React Three Fiber** 构建的高性能、沉浸式 3D 年会抽奖应用程序。采用赛博朋克深空风格，结合电影级后期特效，为年会或活动带来极具科技感的视觉体验。
 
 ## 📸 界面预览
-
+![GIF](/3D-抽奖.gif "3D")
 | **沉浸式 3D 主界面** | **电影级中奖揭晓** |
 |:---:|:---:|
 | <img width="1245" height="925" alt="image" src="https://github.com/user-attachments/assets/68cd8930-013a-453c-a972-043dccc11050" /> | <img width="929" height="951" alt="image" src="https://github.com/user-attachments/assets/6550d2e7-f009-405e-9a02-dc769fa465a9" />
