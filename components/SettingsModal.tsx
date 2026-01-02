@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, UserPlus, Trash2, Download, Upload, Gift, Users, Trophy, Plus, Settings as SettingsIcon, Type, Check, AlertCircle, Timer } from 'lucide-react';
+import { X, UserPlus, Trash2, Download, Upload, Gift, Users, Trophy, Plus, Settings as SettingsIcon, Type, Check, AlertCircle, Timer, GripVertical } from 'lucide-react';
 import { Participant, PrizeConfig, PrizeLevel, Winner } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -45,6 +45,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Delete Confirmation State
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Drag and Drop State
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
 
   if (!isOpen) return null;
 
@@ -180,6 +184,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }, 3000);
     }
   };
+
+  // --- Drag and Drop Logic ---
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    dragItem.current = index;
+    // Set style
+    e.currentTarget.style.opacity = '0.5';
+    // Fix for Firefox
+    e.dataTransfer.effectAllowed = 'move'; 
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    e.preventDefault(); 
+    if (dragItem.current === null) return;
+    if (dragItem.current === index) return;
+
+    // Reorder list
+    const newPrizes = [...prizes];
+    const draggedItem = newPrizes[dragItem.current];
+    
+    // Remove from old index
+    newPrizes.splice(dragItem.current, 1);
+    // Insert at new index
+    newPrizes.splice(index, 0, draggedItem);
+    
+    // Update ref
+    dragItem.current = index;
+    // Update state
+    setPrizes(newPrizes);
+  };
+
+  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
+    dragItem.current = null;
+    dragOverItem.current = null;
+    e.currentTarget.style.opacity = '1';
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -367,9 +412,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                </div>
                <div className="space-y-3">
-                  {prizes.map((prize) => (
-                      <div key={prize.id} className="flex items-center justify-between bg-gray-800/50 p-4 rounded-xl border border-gray-700">
+                  {prizes.map((prize, index) => (
+                      <div 
+                        key={prize.id} 
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, index)}
+                        onDragEnter={(e) => handleDragEnter(e, index)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={handleDragOver}
+                        className="flex items-center justify-between bg-gray-800/50 p-4 rounded-xl border border-gray-700 cursor-move transition-all active:scale-[0.99] hover:bg-gray-800"
+                      >
                           <div className="flex items-center gap-4">
+                              <div className="text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing">
+                                <GripVertical size={20} />
+                              </div>
                               <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold text-gray-900" style={{ backgroundColor: prize.color }}>
                                  {prize.name.charAt(0)}
                               </div>
